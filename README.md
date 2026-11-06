@@ -40,9 +40,9 @@ python3 scripts/spotify_liked_by_year.py YOUR_CLIENT_ID
 A browser tab opens so you can approve access. You'll see something like:
 
 ```
-共 1592 首 liked 歌曲:
-  2023: 199 首
-  2024: 369 首
+1592 liked songs in total:
+  2023: 199 songs
+  2024: 369 songs
   ...
 ```
 
