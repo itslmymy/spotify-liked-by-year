@@ -25,22 +25,33 @@ def authorize(client_id):
 
     class H(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
-            q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            parsed = urllib.parse.urlparse(self.path)
+            if parsed.path != "/callback":  # ignore favicon etc.
+                self.send_response(404); self.end_headers(); return
+            q = urllib.parse.parse_qs(parsed.query)
             result.update({k: v[0] for k, v in q.items()})
             self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.end_headers()
-            self.wfile.write("授权完成,可以关闭这个页面了。".encode())
+            self.wfile.write(b"Authorization complete. You can close this tab.")
         def log_message(self, *a): pass
 
-    srv = http.server.HTTPServer(("127.0.0.1", 8888), H)
-    t = threading.Thread(target=srv.handle_request); t.start()
+    try:
+        srv = http.server.HTTPServer(("127.0.0.1", 8888), H)
+    except OSError:
+        sys.exit("Port 8888 is already in use. Close the program using it and try again.")
+    srv.timeout = 1
+    deadline = time.time() + 300
     url = "https://accounts.spotify.com/authorize?" + urllib.parse.urlencode({
         "client_id": client_id, "response_type": "code", "redirect_uri": REDIRECT,
         "scope": SCOPES, "state": state, "code_challenge_method": "S256", "code_challenge": challenge})
-    print("在浏览器里授权:", url)
+    print("Approve access in your browser:", url)
     webbrowser.open(url)
-    t.join(300)
+    while "state" not in result and "error" not in result and time.time() < deadline:
+        srv.handle_request()
+    srv.server_close()
+    if "error" in result:
+        sys.exit("Authorization was denied: %s" % result["error"])
     if result.get("state") != state or "code" not in result:
-        sys.exit("授权失败或超时: %s" % result)
+        sys.exit("Authorization failed or timed out.")
     body = urllib.parse.urlencode({
         "grant_type": "authorization_code", "code": result["code"], "redirect_uri": REDIRECT,
         "client_id": client_id, "code_verifier": verifier}).encode()
@@ -79,10 +90,10 @@ def main():
         url = page.get("next")
 
     total = sum(len(v) for v in by_year.values())
-    print("\n共 %d 首 liked 歌曲:" % total)
-    for y in sorted(by_year): print("  %s: %d 首" % (y, len(by_year[y])))
+    print("\n%d liked songs in total:" % total)
+    for y in sorted(by_year): print("  %s: %d songs" % (y, len(by_year[y])))
     if not apply:
-        print("\n这是预览,没有改动任何东西。确认后加 --apply 创建歌单。"); return
+        print("\nDry run only; nothing was changed. Add --apply to create the playlists."); return
 
     for y in sorted(by_year):
         pl = call(token, "POST", "/me/playlists", {
@@ -95,8 +106,8 @@ def main():
                 call(token, "POST", "/playlists/%s/tracks" % pl["id"], chunk)
             except urllib.error.HTTPError:
                 call(token, "POST", "/playlists/%s/items" % pl["id"], chunk)
-        print("已创建 Liked %s (%d 首)" % (y, len(uris)))
-    print("完成。原来的 Liked Songs 没有被改动。")
+        print("Created Liked %s (%d songs)" % (y, len(uris)))
+    print("Done. Your Liked Songs were not modified.")
 
 
 main()
