@@ -9,6 +9,12 @@ Creates one private playlist per year ("Liked 2021", "Liked 2022", ...) from the
 
 The work is done by `scripts/spotify_liked_by_year.py` in this skill's folder. It uses only the Python 3 standard library and the Spotify PKCE login flow (no client secret).
 
+## Running the script
+
+- **Paths:** the script path is relative to this skill's folder. Either `cd` into the skill folder first, or use the full path, e.g. `python3 ~/.claude/skills/spotify-liked-by-year/scripts/spotify_liked_by_year.py` (adjust if the skill is installed elsewhere).
+- **Timeout:** the script waits up to 300 seconds for the user to approve access in the browser. A Bash call's default timeout is 120 seconds, so run it with a long timeout (e.g. 600000 ms) or in the background, and tell the user to approve in the browser promptly.
+- `--help` prints usage. The Client ID must be the 32-character hex string from the Spotify app's Settings page; the script rejects anything else.
+
 ## Steps
 
 1. **Check the user has a Spotify Client ID.** If not, walk them through creating one:
@@ -30,7 +36,14 @@ The work is done by `scripts/spotify_liked_by_year.py` in this skill's folder. I
    ```bash
    python3 scripts/spotify_liked_by_year.py CLIENT_ID --apply
    ```
-   Approval is requested again in the browser.
+   Approval is requested again in the browser, and all Liked Songs are re-read. If the user liked new songs since the dry run, the counts will be higher than previewed; that is expected.
+
+## If something goes wrong
+
+- **HTTP 403:** the Spotify app is in development mode and the user's account is not allowed to use it. Tell them to open their app on the Developer Dashboard, go to **User Management** (under Settings), and add their own Spotify account email, then retry.
+- **Port 8888 in use:** close whatever is using it and retry.
+- **Authorization denied or timed out:** nothing was changed; just run the command again.
+- **Error partway through `--apply`:** the script lists the playlists it already created, marking finished ones "(complete)". Ask the user to delete any incomplete "Liked YYYY" playlist (and any they want to redo) in Spotify before re-running, otherwise duplicates are created.
 
 ## Things to tell the user
 

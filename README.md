@@ -58,7 +58,10 @@ python3 scripts/spotify_liked_by_year.py YOUR_CLIENT_ID --apply
 
 - Playlists are created **private**. Change them to public in Spotify if you like.
 - Local files can't be added to playlists through the Spotify API and are skipped.
-- Running `--apply` twice creates duplicate playlists; it doesn't merge into existing ones.
+- Running `--apply` twice creates duplicate playlists; it doesn't merge into existing ones. If a run fails partway, the script lists what it created; delete any incomplete `Liked YYYY` playlist before retrying.
+- Each run re-reads all your Liked Songs, so `--apply` counts include anything you liked since the dry run.
+- If you get an HTTP 403 error: in the Developer Dashboard, open your app, go to **Settings → User Management**, and add your own Spotify account email.
+- The script waits up to 5 minutes for you to approve access in the browser.
 - Permissions requested: read your library, and create/modify your playlists.
 
 ## License
