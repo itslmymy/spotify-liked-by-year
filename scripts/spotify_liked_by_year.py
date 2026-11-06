@@ -4,6 +4,10 @@
 Usage:
   python3 spotify_liked_by_year.py CLIENT_ID            # dry run: just show counts per year
   python3 spotify_liked_by_year.py CLIENT_ID --apply    # create "Liked <year>" playlists
+  python3 spotify_liked_by_year.py --help               # show this help
+
+Each run asks for browser approval and re-reads all Liked Songs, so counts in
+--apply reflect songs liked since the dry run.
 
 Uses the PKCE flow (no client secret). Redirect URI to register in your Spotify app:
   http://127.0.0.1:8888/callback
@@ -75,39 +79,70 @@ def call(token, method, path, data=None):
     raise RuntimeError("too many retries")
 
 
+def explain_http_error(e):
+    try:
+        detail = json.loads(e.read()).get("error", {})
+        detail = detail.get("message", detail) if isinstance(detail, dict) else detail
+    except Exception:
+        detail = ""
+    msg = "Spotify API error %s %s" % (e.code, detail)
+    if e.code == 403:
+        msg += ("\nHint: apps in development mode only work for accounts added under "
+                "'User Management' in your app's settings on the Spotify Developer Dashboard. "
+                "Add your own Spotify account email there and retry.")
+    elif e.code == 401:
+        msg += "\nHint: authorization expired or was rejected; run the command again."
+    return msg
+
+
 def main():
-    if len(sys.argv) < 2: sys.exit(__doc__)
-    client_id, apply = sys.argv[1], "--apply" in sys.argv
+    args = sys.argv[1:]
+    if not args or "-h" in args or "--help" in args:
+        print(__doc__); sys.exit(0 if args else 1)
+    client_id, apply = args[0], "--apply" in args
+    if len(client_id) != 32 or any(c not in "0123456789abcdef" for c in client_id.lower()):
+        sys.exit("CLIENT_ID should be the 32-character hex string from your Spotify app's Settings page.")
     token = authorize(client_id)
 
-    by_year, url = {}, "/me/tracks?limit=50"
-    while url:
-        page = call(token, "GET", url)
-        for it in page["items"]:
-            tr = it["track"]
-            if tr and tr.get("uri") and not tr.get("is_local"):
-                by_year.setdefault(it["added_at"][:4], []).append(tr["uri"])
-        url = page.get("next")
+    created = []
+    try:
+        by_year, url = {}, "/me/tracks?limit=50"
+        while url:
+            page = call(token, "GET", url)
+            for it in page["items"]:
+                tr = it["track"]
+                if tr and tr.get("uri") and not tr.get("is_local"):
+                    by_year.setdefault(it["added_at"][:4], []).append(tr["uri"])
+            url = page.get("next")
 
-    total = sum(len(v) for v in by_year.values())
-    print("\n%d liked songs in total:" % total)
-    for y in sorted(by_year): print("  %s: %d songs" % (y, len(by_year[y])))
-    if not apply:
-        print("\nDry run only; nothing was changed. Add --apply to create the playlists."); return
+        total = sum(len(v) for v in by_year.values())
+        print("\n%d liked songs in total:" % total)
+        for y in sorted(by_year): print("  %s: %d songs" % (y, len(by_year[y])))
+        if not apply:
+            print("\nDry run only; nothing was changed. Add --apply to create the playlists."); return
 
-    for y in sorted(by_year):
-        pl = call(token, "POST", "/me/playlists", {
-            "name": "Liked %s" % y, "public": False,
-            "description": "Songs I liked in %s (auto-grouped)" % y})
-        uris = by_year[y]
-        for i in range(0, len(uris), 100):
-            chunk = {"uris": uris[i:i + 100]}
-            try:
-                call(token, "POST", "/playlists/%s/tracks" % pl["id"], chunk)
-            except urllib.error.HTTPError:
-                call(token, "POST", "/playlists/%s/items" % pl["id"], chunk)
-        print("Created Liked %s (%d songs)" % (y, len(uris)))
-    print("Done. Your Liked Songs were not modified.")
+        for y in sorted(by_year):
+            pl = call(token, "POST", "/me/playlists", {
+                "name": "Liked %s" % y, "public": False,
+                "description": "Songs I liked in %s (auto-grouped)" % y})
+            created.append("Liked %s" % y)
+            uris = by_year[y]
+            for i in range(0, len(uris), 100):
+                chunk = {"uris": uris[i:i + 100]}
+                try:
+                    call(token, "POST", "/playlists/%s/tracks" % pl["id"], chunk)
+                except urllib.error.HTTPError:
+                    call(token, "POST", "/playlists/%s/items" % pl["id"], chunk)
+            print("Created Liked %s (%d songs)" % (y, len(uris)))
+            created[-1] += " (complete)"
+        print("Done. Your Liked Songs were not modified.")
+    except urllib.error.HTTPError as e:
+        print(explain_http_error(e), file=sys.stderr)
+        if created:
+            print("\nPlaylists created before the error: " + ", ".join(created) +
+                  "\nDelete any not marked (complete) in Spotify before re-running --apply, "
+                  "otherwise you will get duplicates.", file=sys.stderr)
+        sys.exit(1)
 
 
 main()
